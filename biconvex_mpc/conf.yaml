@@ -1,0 +1,6 @@
+/timesteps: 500
+steps: 50
+state_conf: "None"
+epochs: 128
+batch_size: 128
+

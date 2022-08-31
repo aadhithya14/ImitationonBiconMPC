@@ -1,0 +1,13 @@
+*mp4
+*npz
+*pyc
+*mkv
+*txt
+build/*
+build
+.idea/*
+.idea
+cmake-build-debug
+cmake-build-debug/*
+*.so
+*.dylib
