@@ -16,6 +16,7 @@ from mpc.abstract_cyclic_gen import SoloMpcGaitGen
 import gym,gym.envs
 #import gym_solo
 from motions.cyclic.solo12_jump import jump
+from motions.cyclic.solo12_trot import trot
 from gym.spaces import Box
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.vec_env import DummyVecEnv
@@ -29,9 +30,9 @@ from envs.pybullet_env import PyBulletEnv
 from controllers.robot_id_controller import InverseDynamicsController
 from imitation.algorithms.bc import reconstruct_policy
 
-from imitation.algorithms import bc,dagger
+from imitation.algorithms import bc
 #from dagger import SimpleDaggerTrainer
-from imitation.algorithms.dagger import SimpleDAggerTrainer
+#from imitation.algorithms.dagger import SimpleDAggerTrainer
 #from imitation.rewards import reward_nets
 from imitation.data import rollout
 from imitation.data.rollout import TrajectoryAccumulator
@@ -41,7 +42,7 @@ from bullet_utils.env import BulletEnvWithGround
 import matplotlib.pyplot as plt
 from stable_baselines3.common import policies
 
-from imitation.algorithms.adversarial import GAIL
+#from imitation.algorithms.adversarial import GAIL
 from imitation.rewards.reward_nets import BasicRewardNet
 #from imitation.util.networks import RunningNorm
 from stable_baselines3 import PPO
@@ -59,196 +60,14 @@ from stable_baselines3.common.evaluation import evaluate_policy
 import torch.nn as nn 
 import torch.optim as optim
 from torch.optim.lr_scheduler import StepLR
-
+from envs.gymenv import SoloMPC
+from model import MLP
 
 
 
 #from stable_baselines3.common.env_util import make_vec_env
 
 
-
-class SoloMPC(gym.Env):
-    def __init__(self):
-        self.pin_robot = Solo12Config.buildRobotWrapper()
-        self.urdf_path = Solo12Config.urdf_path
-        self.n_eff = 4
-        self.q0 = np.array(Solo12Config.initial_configuration)
-        self.v0 = pin.utils.zero(self.pin_robot.model.nv)
-        self.des=0.1
-        self.x0 = np.concatenate((self.q0, pin.utils.zero(self.pin_robot.model.nv)))
-        self.f_arr = ["FL_FOOT", "FR_FOOT", "HL_FOOT", "HR_FOOT"]
-        self.robot = PyBulletEnv(Solo12Robot, self.q0, self.v0)
-        self.obs_dim=41
-        self.action_dim=12
-        self.ndof=12
-        self.high= np.inf * np.ones([self.obs_dim])
-        self.observation_space=Box(-self.high, self.high)
-        self.high_action= 3.1415*np.ones([self.action_dim])
-        self.action_space=Box(-self.high_action, self.high_action)
-        #np.random.choice([-0.1,-0.05, 0.0,0.05,0.1])
-        self.num_envs=1 
-        self.cnt=0     
-        self.reward_list=[] 
-        self.termination=Termination(self.robot) 
-        self.max_torque=2.5 
-        self.joint_limits=[[-3.1415, 3.1415], [-3.1415, 3.1415], [-3.1415, 3.1415], [-3.1415, 3.1415], [-3.1415, 3.1415], [-3.1415, 3.1415], [-3.1415, 3.1415], [-3.1415, 3.1415], [-3.1415, 3.1415], [-3.1415, 3.1415], [-3.1415, 3.1415], [-3.1415, 3.1415] ]
-        
-
-    def reset(self):
-        
-        self.q0 = np.array(Solo12Config.initial_configuration)
-        self.q_0=self.q0
-        self.v0 = pin.utils.zero(self.pin_robot.model.nv)
-        position_old=pybullet.getLinkState(self.robot.robot.robotId,self.robot.robot.end_eff_ids[0])
-        #print(position_old)
-        #self.q0[0] = np.random.random()
-        #self.q0[1] = np.random.random()
-        self.q0[0:2] =0.0
-        #self.q0[2]=0.35
-        #self.q0[6:9]
-        #print(self.q0)
-        #self.q0[3:6] = np.random.uniform(0.0,0.3)
-        self.q0[9] = np.random.uniform(-2.0,-1.0)
-        self.q0[12] =self.q0[9]
-        self.q0[15] =np.random.uniform(1.0,2.0)
-        self.q0[18] = self.q0[15]
-        self.q0[8] = np.random.uniform(0.0,1.0)
-        self.q0[11]= self.q0[8]
-        self.q0[14]= np.random.uniform(-1.0,0.0)
-        self.q0[17]= self.q0[14]
-        self.robot.robot.reset_state(self.q0, self.v0)
-        self.done=False
-        """for i in range(5):
-            self.qdes_act(self.q_0)"""
-        self.des=np.random.choice([-0.1,-0.05, 0.0,0.05,0.1])
-        self.wdes=np.random.choice([-0.1,-0.05, 0.0, 0.05,0.1])
-        
-        self.termination.init_termination()
-        for termination_object in self.termination.termination_dict.values():
-            #print(termination_object)
-            termination_object.reset()
-        #self.des=np.random.choice([-0.1,-0.05])
-        position=pybullet.getLinkState(self.robot.robot.robotId,self.robot.robot.end_eff_ids[0])
-        #print(position)
-
-
-        self.cnt=0
-        self.x0 = np.concatenate((self.q0, np.array(self.v0),np.array([self.des,0.0,0.0]),np.array([self.wdes])))
-
-        #print(self.x0)
-        return self.x0
-
-    def step(self,action):
-        self.q0,self.v0=self.robot.get_state()
-        self.x0=np.concatenate((np.array(self.q0),np.array(self.v0)))
-        self.actions(action,action_space="pd")
-        
-        self.q,self.v=self.robot.get_state()
-        
-        self.reward_func= Reward(self.v, self.des)
-        self.reward= self.reward_func.get_reward()
-
-        self.cnt=self.cnt+1
-        kp=2.0
-        kd=0.05
-        #self.done= False
-        """
-        if self.cnt>=10000:
-            self.done =True
-        else:
-            self.done= False
-        """
-        #self.x=np.concatenate((np.array(self.q),np.array(self.v)))
-        
-        #self.done= False
-        for termination_object in self.termination.termination_dict.values():
-            if termination_object.done():
-                self.done = True
-            termination_object.step()
-        
-        self.x=np.concatenate((np.array(self.q),np.array(self.v),np.array([self.des,0.0,0.0]),np.array([self.wdes])))
-
-
-        return self.x,self.reward,self.done,info
-
-    def get_robot(self):
-        return self.robot
-
-    def render(self,mode="rgb_array"):
-        self.close()
-        self.q0 = np.array(Solo12Config.initial_configuration)
-        self.v0 = pin.utils.zero(self.pin_robot.model.nv)
-        self.robot = PyBulletEnv(Solo12Robot, self.q0, self.v0)
-        self.robot.robot.reset_state(self.q0, self.v0)
-
-    def seed(self, seed=None): 
-        self.np_random, seed = gym.utils.seeding.np_random(seed)
-        return [seed]
-
-    def close(self):
-        pybullet.disconnect(self.robot.env.physics_client)
-
-    def actions(self,action,action_space):
-        if action_space=="torque":
-            self.robot.send_joint_command(action)
-        else:
-            self.qdes_act(action)
-            #print("**")
-    
-    def find_qdes(self,tau,kp,kd):
-        q,v=self.robot.get_state()
-        qdes=np.add(((1/kp)*np.add(np.array(tau),np.array(kd*v[6:]))),q[7:])
-        return qdes
-
-    def qdes_act(self,qdes):
-        # kp_var (qdes - q) - kd_var qdot
-
-        # example parametrization
-        # kp_var_range: [  1.00, 10.00 ]
-        # kd_var_range: [  0.05,  0.14 ]
-
-        #action_qdes = action[:self.ndof]
-        #action_gain = action[self.ndof:]
-        
-        kp = 2.0
-        kd = 0.05
-
-        
-
-        #self.qdes      = scale(action_qdes, [-1.0, 1.0], self.joint_limits)
-
-        q, v    = self.robot.get_state()
-        #self.qdes_for_ttr = self.qdes
-        #self.qdotdes_for_ttr = self.qdotdes
-        v=v[6:]
-        joint_type = ['circular'] * 12
-        q_diff     = PositionGainController.pos_diff(q[7:], qdes, joint_type)
-
-        torque = kp * q_diff - kd * v
-
-        self.torque_control(torque)
-
-    def torque_control(self, des_torque, no_clipping=False):
-        if not no_clipping:
-            self.des_torque = np.clip(des_torque, -self.max_torque, self.max_torque)
-        else:
-            self.des_torque = des_torque
-
-        
-
-        cont_joint_ids=self.robot.robot.bullet_joint_ids
-        """if self.log is not None:
-            self.log.add('torque', self.des_torque.tolist())
-        """
-        for i in range(12):
-            pybullet.setJointMotorControl2(
-                bodyUniqueId=self.robot.robot.robotId,
-                jointIndex=cont_joint_ids[i],
-                controlMode=pybullet.TORQUE_CONTROL,
-                force=self.des_torque[i])
-        pybullet.stepSimulation()
-
-    
 
 
 # Fucntion to train Behaviour Cloning 
@@ -272,7 +91,7 @@ def expert(env,exp_name):
     x0=x0[0:37]
     ## Motion
     
-    gait_params = jump
+    gait_params = trot
     lag = int(update_time/sim_dt)
     gg = SoloMpcGaitGen(env.pin_robot, env.urdf_path, x0, plan_freq, env.q0, None)
 
@@ -290,6 +109,8 @@ def expert(env,exp_name):
     solve_times = []
     num_interactions= int(1e6)
     j=0
+    #expert_observations = []
+    #expert_actions = []
     if isinstance(env.action_space, gym.spaces.Box):
         expert_observations = np.empty((num_interactions,) + (int(env.observation_space.shape[0]),))
         expert_actions = np.empty((num_interactions,) + (int(env.action_space.shape[0]),))
@@ -321,7 +142,7 @@ def expert(env,exp_name):
                 # this bit has to be put in shared memory
             #if not done:
                 q, v = env.robot.get_state()
-                obs=np.concatenate((np.array(q),np.array(v),v_des,np.array([w_des])))
+                obs=np.concatenate((np.array(q),np.array(v),v_des,np.array([w_des])),dtype=np.float32)
                     #obs=obs.tolist()
                     #trajectories["obs"]=obs
                     
@@ -373,6 +194,7 @@ def expert(env,exp_name):
                     next_obs,reward,done,info =env.step(action)
                 else:
                     qdes=env.find_qdes(tau,kp,kd)
+                    qdes=np.array(qdes,dtype=np.float32)
                     #for i in range(8):
                     next_obs,reward,done,info =env.step(qdes)
                     #print("###")
@@ -493,7 +315,7 @@ class Agent():
             self.criterion = nn.CrossEntropyLoss()
 
         # Extract initial policy
-        self.model = student.policy.to(self.device)
+        self.model = student.to(self.device)
 
     def train(self, device, train_loader, optimizer,epoch):
             self.model.train()
@@ -509,7 +331,7 @@ class Agent():
                         action, _, _ = self.model(data)
                     else:
                         # SAC/TD3:
-                        action = self.model(data)
+                        action = self.model(data.float())
                     action_prediction = action.double()
                 else:
                 # Retrieve torche logits for A2C/PPO when using discrete actions
@@ -522,7 +344,7 @@ class Agent():
                 optimizer.step()
                 if batch_idx % self.log_interval == 0:
                     print(
-                        "Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}".format(
+                        "Train Epoch: {}[{}/{} ({:.0f}%)]\tLoss: {:.6f}".format(
                             epoch,
                             batch_idx * len(data),
                             len(train_loader.dataset),
@@ -547,7 +369,7 @@ class Agent():
                             action, _, _ = self.model(data)
                         else:
                             # SAC/TD3:
-                            action = self.model(data)
+                            action = self.model(data.float())
                         action_prediction = action.double()
                     else:
                         # Retrieve torche logits for A2C/PPO when using discrete actions
@@ -578,7 +400,7 @@ class Agent():
                 scheduler.step()
 
             # Implant torche trained policy network back into the RL student agent
-            a2c_student.policy = self.model
+            #a2c_student.policy = self.model
 
 def visualise(venv,student,n_eval_episodes=3,render=False,exp_name="/home/aiyer/new_ws"):
         policy=student.load(exp_name+"a2c_student")
@@ -597,36 +419,43 @@ if __name__== "__main__":
     parser.add_argument('--env', help='environment ID', default='Solo12-v0')
     parser.add_argument('--seed', help='RNG seed', type=int, default=0)
     parser.add_argument('--name', help='experiment name', default='unnamed')
+    parser.add_argument('--flag', help='experiment type',type=int, default='unnamed')
     parser.add_argument('--exp', help='')
+    parser.add_argument('--plot', help='',type=int)
+    parser.add_argument('--collect', help='',type=int)
     args = parser.parse_args()
 
     
     exp_name= args.exp
+    flag = args.flag
+    plot= args.plot
     #venv=gym.make(env_id)
     #env=make_vec_env(venv)
-    env= SoloMPC() 
-    a2c_student = A2C('MlpPolicy', env, verbose=1)
+    env=  SoloMPC(exp_name,flag,plot) 
+    #a2c_student = A2C('MlpPolicy', env, verbose=1)
+    model= MLP()
     # Here, we use PyTorch `DataLoader` to our load previously created `ExpertDataset` for training
     # and testing
-    """
+    
     expert_observations,expert_actions=expert(env,exp_name)
     data=Datasplit(expert_observations,expert_actions)
     train_expert_dataset=data.__get_train_expert__()
     test_expert_dataset=data.__get_test_expert__()
 
-    mean_reward, std_reward = evaluate_policy(a2c_student, env, n_eval_episodes=10)
+    """mean_reward, std_reward = evaluate_policy(a2c_student, env, n_eval_episodes=10)
     print(f"Mean reward = {mean_reward} +/- {std_reward}")
+    """
 
-    agent= Agent(env,a2c_student,exp_name)
+    agent= Agent(env,model,exp_name)
     agent.play(train_expert_dataset,test_expert_dataset)
 
     
-    a2c_student.save(exp_name+"a2c_student")
+    model.save(exp_name+"policy")
 
-    mean_reward, std_reward = evaluate_policy(a2c_student, env, n_eval_episodes=10)
+    mean_reward, std_reward = evaluate_policy(model, env, n_eval_episodes=10)
    
     print(f"Mean reward = {mean_reward} +/- {std_reward}")
-    """
+    
     #venv =  DummyVecEnv([SoloMPC])
     #venv=gym.make(env_id)
     #print(venv.envs[0])
@@ -636,7 +465,7 @@ if __name__== "__main__":
     #collect_dataset(venv,exp_name)
     #train_dagger(venv)
     #train_gail(venv)
-    visualise(env,a2c_student,10,True,exp_name)
+    #visualise(env,a2c_student,10,True,exp_name)
 
     
 

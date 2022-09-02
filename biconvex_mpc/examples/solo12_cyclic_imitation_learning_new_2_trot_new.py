@@ -19,7 +19,7 @@ from motions.cyclic.solo12_jump import jump
 from motions.cyclic.solo12_trot import trot
 from motions.cyclic.solo12_bound import bound
 from gym.spaces import Box
-from stable_baselines3.common.evaluation import evaluate_policy
+from stable_baselines3.common.evaluation import evaluate_policy,evaluate_policy_with_biconvex
 from stable_baselines3.common.vec_env import DummyVecEnv
 import torch
 from stable_baselines3.common.policies import BasePolicy
@@ -103,7 +103,7 @@ class Agent():
             #transitions=sample_expert_transitions(env)
             log=json.load(open(exp_name+"obs_new.json"))
             transitions=[]
-            for i in range(320000):
+            for i in range(1000000):
                 transitions.append({'obs':np.array(log['obs'][i]),'acts':np.array(log['acts'][i])})
             bc_trainer = bc.BC(
                     observation_space=self.env.observation_space,
@@ -195,7 +195,7 @@ class Agent():
         #obs = env.reset()   
         #venv.close()
         #logging_id=pybullet.startStateLogging(pybullet.STATE_LOGGING_VIDEO_MP4,exp_name+"video.mp4")
-        reward, _ = evaluate_policy(policy, self.env,self.exp_name, n_eval_episodes=n_eval_episodes)
+        reward, _ = evaluate_policy_with_biconvex(policy, self.env,self.exp_name, n_eval_episodes=n_eval_episodes)
             #pybullet.stopStateLogging(logging_id)
             #print(f"Reward after training: {reward}"
 
@@ -230,7 +230,7 @@ if __name__== "__main__":
     #print(venv.envs[0])
     #env=venv.env
     #print(env.pin_robot)
-    print(env.action_space)
+    #print(env.action_space)
     """policy_kwargs = dict(
             lr_schedule=ConstantLRSchedule(lr=0.0003),
             #device=self.device,
@@ -241,7 +241,7 @@ if __name__== "__main__":
         agent.train_bc()
         
     else:
-        agent.visualise(n_eval_episodes=5)
+        agent.visualise(n_eval_episodes=1)
     #collect_dataset(venv,exp_name)
     #train_dagger(env,a2c_student,exp_name)
     #train_gail(venv)

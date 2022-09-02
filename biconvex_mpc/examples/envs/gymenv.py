@@ -39,7 +39,7 @@ class SoloMPC(gym.Env):
         self.observation_space=Box(-self.high, self.high)
         self.high_action=np.ones([self.action_dim])
         self.low_action=np.zeros([self.action_dim])
-        self.action_space=Box(self.low_action, self.high_action)
+        self.action_space=Box(-self.high_action, self.high_action)
         self.exp_name=exp_name
         self.exp_config=yaml.load(open(exp_name + 'conf.yaml'))
         self.plot=plot
@@ -139,7 +139,15 @@ class SoloMPC(gym.Env):
             print(type(self.base_pos))
             print(type(self.diff_pos))
 
-
+        elif self.exp_config['state_conf']=='sensor_space':
+            self.robot.robot.compute_numerical_quantities(dt=0.001)
+            linacc=self.robot.robot.get_base_imu_linacc()
+            ang_vel=self.robot.robot.get_base_imu_angvel()
+            q,v=self.robot.robot.get_state()
+            encoder_positions=q[7:]
+            encoder_velocities=q[6:]
+            encoder_velocities+=np.random.normal(0, .1, encoder_velocities.shape)
+            self.state=np.concatenate((linacc,ang_vel,encoder_positions,encoder_velocities))
         elif self.exp_config['state_conf']=='encoder_space':
             self.robot.robot.compute_numerical_quantities(dt=0.001)
             linacc=self.robot.robot.get_base_imu_linacc()
@@ -154,7 +162,7 @@ class SoloMPC(gym.Env):
             self.history=[]
             
         
-        self.des=np.random.uniform(-0.2,0.2)
+        self.des=-0.1#np.random.uniform(-0.2,0.2)
         #self.des=0.0
         self.wdes=0.0
 
@@ -217,7 +225,7 @@ class SoloMPC(gym.Env):
         if self.flag!=0:
             self.done=False
             #print("**************")
-            if self.cnt>=10000:
+            if self.cnt>=30000:
                 self.done =True
             else:
                 self.done= False
@@ -416,7 +424,7 @@ class SoloMPC(gym.Env):
 
         self.torque_control(torque)
 
-    def torque_control(self, des_torque, no_clipping=False):
+    def torque_control(self, des_torque, no_clipping=True):
         if not no_clipping:
             self.des_torque = np.clip(des_torque, -self.max_torque, self.max_torque)
         else:

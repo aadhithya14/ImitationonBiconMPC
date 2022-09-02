@@ -110,7 +110,7 @@ def plot_torque(torque,exp_name):
 
 def plot_obs(qdes,qdes_policy,exp_name):
     plt.rcParams["figure.figsize"] = (20,20)
-    fig,ax= plt.subplots(12,1)
+    fig,ax= plt.subplots(12,1,sharex=True)
     #obs=np.transpose(obs)
     #obs=obs[0:2500]
     qdes=np.transpose(qdes)
@@ -122,8 +122,8 @@ def plot_obs(qdes,qdes_policy,exp_name):
         ax[i].legend(loc='upper left')
     plt.ylabel("qdes")
     plt.tight_layout(pad=0.3, h_pad=0.3, w_pad=None, rect=None)
-    #plt.show()
-    plt.savefig(exp_name+"trajectory.png")
+    plt.show()
+    #plt.savefig(exp_name+"trajectory.png")
 
 
 
@@ -177,7 +177,7 @@ def plot_actions_true(exp_name):
     
     log=json.load(open(exp_name+"obs_new.json"))
     mylog=Log(exp_name+"values_new.json")
-    policy=reconstruct_policy(exp_name+"/policy")
+    #policy=reconstruct_policy(exp_name+"/policy")
     for n in range(2500):
         #n=np.random.randint(0,150000)
         obs=np.array(log['obs'][2500+n])
@@ -186,7 +186,7 @@ def plot_actions_true(exp_name):
         action_policy,_=policy.predict(obs)
         print(action_policy)
         mylog.add('qdes',action_des.tolist())
-        mylog.add('qdes_policy',action_policy.tolist())
+        #mylog.add('qdes_policy',action_policy.tolist())
     mylog.save()
     #plt.plot(action,'b',label='qdes_actual')
     #plt.plot(action_des,'r',label='qdes')
@@ -232,17 +232,18 @@ if __name__ == '__main__':
     #while (os.path.isdir(exp_folder)):
     #log=json.load(open(exp_folder+"t.json"))
     #log=json.load(open(exp_folder+"values_new.json"))
+    log=json.load(open(exp_folder+"logs.json"))
     #log=json.load(open(exp_folder+"actions.json"))
         #ep_log=json.load(open(exp_folder+'logdir.monitor.json'))
     #actual_qdes=log['actual_qdes']
     #qdes=log['qdes_command']
     #plot_actions_true(exp_name)
     #torque=log['torque']
-    #qdes=log['qdes']
-    #qdes_policy=log['qdes_policy']
-    #obs=log['obs']
     qdes=log['qdes']
     qdes_policy=log['qdes_policy']
+    #obs=log['obs']
+    #qdes=log['qdes']
+    #qdes_policy=log['qdes_policy']
     #plot_actions(qdes,actual_qdes,exp_name)
     #neglogploss=log["neglogp"]
     #ent_loss=log["ent_loss"]
@@ -253,7 +254,7 @@ if __name__ == '__main__':
 
     #plot_loss(loss,exp_name)
     #plot_torque(obs,exp_name)
-    #plot_obs(qdes,qdes_policy,exp_name)
+    plot_obs(qdes,qdes_policy,exp_name)
     #plot_qdes(actions,actions_policy,exp_name)
     #horizon=[35,9,8,9]
     #plot_horizon(horizon,exp_name)
